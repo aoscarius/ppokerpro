@@ -56,6 +56,10 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('receive-emote', { id: id, icon: icon, x: x });
     });
 
+    socket.on('throw-emote', (data) => {
+        socket.to(data.roomId).emit('receive-throw', data);
+    });
+
     socket.on('update-title', ({ roomId, title }) => {
         const room = rooms.get(roomId);
         if (room) { room.storyTitle = title; io.to(roomId).emit('update-state', room); }

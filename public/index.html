@@ -24,6 +24,14 @@
             100% { transform: translateY(-350px) scale(1.8); opacity: 0; } 
         }
         .emote-fly { position: fixed; bottom: 120px; pointer-events: none; animation: floatUp 2.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; font-size: 3.5rem; z-index: 1000; }
+
+        .emote-throw {
+            position: fixed;
+            pointer-events: none;
+            z-index: 2000;
+            font-size: 1.6rem;
+            transition: all 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen" x-data="pokerApp()" x-init="init()">
@@ -31,6 +39,14 @@
     <div x-cloak>
         <template x-for="e in activeEmotes" :key="e.id">
             <div class="emote-fly" :style="`left: ${e.x}%`" x-text="e.icon"></div>
+        </template>
+
+        <template x-for="t in thrownEmotes" :key="t.id">
+            <div class="emote-throw" 
+                 :id="'throw-'+t.id"
+                 :style="`left: ${t.startX}px; top: ${t.startY}px; transform: scale(0.3); opacity: 0;`"
+                 x-init="$nextTick(() => animateThrow(t))"
+                 x-text="t.icon"></div>
         </template>
 
         <div x-show="showOverlay" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/98 backdrop-blur-md p-4">
@@ -46,8 +62,13 @@
                 </div>
 
                 <div class="space-y-4">
-                    <input type="text" x-model="userName" @keyup.enter="confirmJoin()" placeholder="Your Name" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 text-center text-white font-bold">
-                    <button @click="confirmJoin()" :disabled="!userName" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black disabled:opacity-50 uppercase tracking-widest transition-all shadow-lg shadow-indigo-900/20">Join Session</button>
+                    <input type="text" x-model="userName" @input="errorMessage = ''" @keyup.enter="confirmJoin()" placeholder="Enter your nickname" 
+                           class="w-full bg-slate-800 border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 text-center text-white font-bold transition-all"
+                           :class="errorMessage ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-700'">
+                    
+                    <p x-show="errorMessage" x-text="errorMessage" class="text-red-400 text-xs font-bold uppercase tracking-widest animate-pulse"></p>
+
+                    <button @click="confirmJoin()" :disabled="!userName" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black disabled:opacity-50 uppercase tracking-widest transition-all">Join Session</button>
                 </div>
             </div>
         </div>
@@ -118,7 +139,24 @@
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <template x-for="p in (players || [])" :key="p.id">
                             <div class="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col items-center relative transition-all shadow-xl hover:border-slate-700">
-                                <img :src="`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.avatar}`" class="w-7 h-7 rounded-full absolute top-1 right-2 border border-slate-700 bg-slate-800 z-10 shadow-lg">
+                                
+                                <div class="absolute top-1 right-1 z-10" 
+                                     x-data="{ showRadial: false }" 
+                                     @mouseenter="if(p.id !== socketId) showRadial = true" 
+                                     @mouseleave="showRadial = false">
+                                    
+                                    <img :id="'avatar-'+p.id"
+                                         :src="`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.avatar}`" 
+                                         class="w-8 h-8 rounded-full border border-slate-700 bg-slate-800 shadow-lg transition-transform"
+                                         :class="p.id !== socketId ? 'cursor-crosshair hover:scale-125' : ''">
+
+                                    <div x-show="showRadial" 
+                                         class="absolute top-8 -right-2 flex flex-col gap-2 bg-slate-800 border border-slate-700 p-2 rounded-xl shadow-2xl animate-in fade-in zoom-in duration-150 z-20">
+                                        <template x-for="icon in ['🍅','💩','❤️', lastSelectedEmote]" :key="icon">
+                                            <button @click="triggerThrow(p.id, icon)" class="hover:scale-150 transition-transform p-1 text-xl active:scale-90" x-text="icon"></button>
+                                        </template>
+                                    </div>
+                                </div>
                                 
                                 <div class="w-16 h-24 perspective-1000 mb-3 mt-2">
                                     <div class="card-inner" :class="revealed ? 'card-revealed' : ''">
@@ -199,7 +237,7 @@
             </main>
 
             <footer class="fixed bottom-6 left-1/2 -translate-x-1/2 glass border border-slate-700 rounded-2xl px-6 py-3 z-50 flex gap-6 shadow-2xl">
-                <template x-for="emo in ['🔥','👏','🚀','🤔','😱','✈️','🗑️','💩','🍺','🍕','🎉','💯','💡','💎']" :key="'btn-'+emo">
+                <template x-for="emo in ['🔥','👏','🚀','🤔','😱','✈️','🗑️','🍺','🍕','🎉','💯','💡','💎']" :key="'btn-'+emo">
                     <button @click="sendEmote(emo)" class="text-2xl hover:scale-150 transition-transform active:scale-90" x-text="emo"></button>
                 </template>
             </footer>
@@ -210,15 +248,17 @@
         function pokerApp() {
             const socket = io();
             return {
-                showOverlay: true, isCreator: false, roomId: '', 
+                showOverlay: true, isCreator: false, roomId: '', socketId: '',
                 userName: localStorage.getItem('p_name') || '',
                 avatarSeed: localStorage.getItem('p_avatar') || Math.random().toString(36).substring(7),
-                storyTitle: '', myVote: null, revealed: false, players: [], currentDeck: 'Fibonacci', activeEmotes: [],
-                linkCopied: false,
+                storyTitle: '', myVote: null, revealed: false, players: [], currentDeck: 'Fibonacci', 
+                activeEmotes: [], thrownEmotes: [], lastSelectedEmote: '🚀', errorMessage: '', linkCopied: false,
                 decks: { 
                     'Fibonacci': [1,2,3,5,8,13,21,34,'?'],
-                    'Linear': [1,2,3,4,5,6,7,8,9,10],
-                    'T-Shirt': ['XS','S','M','L','XL','XXL','?']
+                    'Standard': [1,2,3,4,5,10,20,50,100],
+                    'T-Shirt': ['XS','S','M','L','XL','XXL','?'],
+                    'Animals': ['🐭','🐹','🐰','🦊','🐻','🐯','🦁','🐘'],
+                    'Weather': ['☀️','🌤️','☁️','🌧️','⛈️','❄️','🌪️','🔥']
                 },
                 autoReveal: false, countdown: 0, timerId: null,
 
@@ -227,9 +267,15 @@
                     this.isCreator = !r;
                     this.roomId = r || 'ROOM-' + Math.random().toString(36).substring(2,7).toUpperCase();
                     
+                    socket.on('connect', () => { this.socketId = socket.id; });
+
                     socket.on('update-state', (s) => {
                         this.players = s.players || [];
                         this.revealed = s.revealed;
+                        if (this.players.some(p => p.id === this.socketId)) {
+                            this.showOverlay = false;
+                            this.errorMessage = '';
+                        }
                         if (!this.isCreator) this.storyTitle = s.storyTitle;
                         
                         if (this.isCreator && this.autoReveal && !this.revealed && this.votedCount === this.players.length && this.players.length > 0) {
@@ -243,18 +289,66 @@
                         }
                     });
 
+                    socket.on('room-error', (type) => {
+                        this.errorMessage = type === 'name_taken' ? 'NICKNAME ALREADY TAKEN' : 'ROOM ALREADY EXISTS';
+                        this.showOverlay = true;
+                    });
+
                     socket.on('auto-reveal-tick', (val) => { this.countdown = val; });
+                    
                     socket.on('receive-emote', (data) => {
                         this.activeEmotes.push(data);
-                        setTimeout(() => { 
-                            this.activeEmotes = this.activeEmotes.filter(e => e.id !== data.id); 
-                        }, 2500);
+                        setTimeout(() => this.activeEmotes = this.activeEmotes.filter(e => e.id !== data.id), 2500);
+                    });
+
+                    socket.on('receive-throw', (data) => {
+                        this.thrownEmotes.push(data);
                     });
 
                     setInterval(() => { if(!this.showOverlay) socket.emit('heartbeat', this.roomId); }, 5000);
                 },
 
+                triggerThrow(targetId, icon) {
+                    if (targetId === this.socketId) return;
+                    const side = Math.random() > 0.5;
+                    const data = {
+                        id: Date.now() + Math.random(),
+                        targetId: targetId,
+                        icon: icon,
+                        startX: side ? -80 : window.innerWidth + 80,
+                        startY: Math.random() * (window.innerHeight * 0.8)
+                    };
+                    this.thrownEmotes.push(data);
+                    socket.emit('throw-emote', { roomId: this.roomId, ...data });
+                },
+
+                animateThrow(t) {
+                    const el = document.getElementById('throw-' + t.id);
+                    const targetEl = document.getElementById('avatar-' + t.targetId);
+                    if (!el || !targetEl) return;
+
+                    const rect = targetEl.getBoundingClientRect();
+                    const targetX = rect.left + rect.width / 2 - 15;
+                    const targetY = rect.top + rect.height / 2 - 15;
+                    
+                    requestAnimationFrame(() => {
+                        el.style.opacity = '1';
+                        el.style.transform = 'scale(1) rotate(360deg)';
+                        el.style.left = targetX + 'px';
+                        el.style.top = targetY + 'px';
+                    });
+
+                    setTimeout(() => {
+                        el.style.opacity = '0';
+                        el.style.transform = 'scale(1.5) rotate(720deg)';
+                        setTimeout(() => {
+                            this.thrownEmotes = this.thrownEmotes.filter(x => x.id !== t.id);
+                        }, 400);
+                    }, 800);
+                },
+
                 sendEmote(icon) { 
+                    this.lastSelectedEmote = icon;
                     const id = Date.now(); 
                     const emoteData = { id, icon, x: 10 + Math.random() * 80 };
                     this.activeEmotes.push(emoteData);
@@ -269,9 +363,9 @@
                     this.timerId = setInterval(() => {
                         this.countdown--;
                         socket.emit('broadcast-countdown', { roomId: this.roomId, val: this.countdown });
-                        if (this.countdown <= 0) {
-                            this.revealVotes();
-                            this.cancelAutoReveal();
+                        if (this.countdown <= 0) { 
+                            this.revealVotes(); 
+                            this.cancelAutoReveal(); 
                         }
                     }, 1000);
                 },
@@ -284,7 +378,7 @@
                 },
 
                 logout() { 
-                    localStorage.removeItem('p_name');
+                    localStorage.removeItem('p_name'); 
                     localStorage.removeItem('p_avatar');
                     window.location.href = '/'; 
                 },
@@ -295,7 +389,7 @@
                 },
                 confirmJoin() {
                     if(!this.userName) return;
-                    this.showOverlay = false;
+                    this.errorMessage = '';
                     localStorage.setItem('p_name', this.userName);
                     localStorage.setItem('p_avatar', this.avatarSeed);
                     if (this.isCreator) window.history.replaceState({}, '', `?room=${this.roomId}`);
@@ -306,7 +400,7 @@
                 revealVotes() { socket.emit('reveal-votes', this.roomId); },
                 resetTable() { 
                     this.myVote = null; 
-                    this.cancelAutoReveal();
+                    this.cancelAutoReveal(); 
                     socket.emit('reset-table', this.roomId); 
                 },
                 copyLink() { 
