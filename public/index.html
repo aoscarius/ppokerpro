@@ -36,6 +36,10 @@
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen" x-data="pokerApp()" x-init="init()">
 
+    <div x-show="creatorMessage" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-[9999] bg-indigo-600 text-white px-8 py-4 rounded-xl shadow-2xl animate-bounce font-bold text-lg">
+        <span x-text="creatorMessage"></span>
+    </div>
+
     <div x-cloak>
         <template x-for="e in activeEmotes" :key="e.id">
             <div class="emote-fly" :style="`left: ${e.x}%`" x-text="e.icon"></div>
@@ -252,7 +256,7 @@
                 showOverlay: true, isCreator: false, roomId: '', socketId: '',
                 userName: localStorage.getItem('p_name') || '',
                 avatarSeed: localStorage.getItem('p_avatar') || Math.random().toString(36).substring(7),
-                storyTitle: '', myVote: null, revealed: false, players: [], currentDeck: 'Fibonacci', 
+                creatorMessage: '', storyTitle: '', myVote: null, revealed: false, players: [], currentDeck: 'Fibonacci', 
                 activeEmotes: [], thrownEmotes: [], lastSelectedEmote: '🚀', errorMessage: '', linkCopied: false,
                 decks: { 
                     'Fibonacci': [1,2,3,5,8,13,21,34,'?'],
@@ -277,6 +281,15 @@
                     socket.on('update-state', (s) => {
                         this.players = s.players || [];
                         this.revealed = s.revealed;
+                        // check if is a promotion
+                        const me = s.players.find(p => p.id === this.socketId);
+                        if (me) this.isCreator = me.isCreator;
+
+                        if (s.creatorMessage) {
+                            this.creatorMessage = s.creatorMessage;
+                            setTimeout(() => this.creatorMessage = '', 3000);
+                        }
+
                         if (this.players.some(p => p.id === this.socketId)) {
                             this.showOverlay = false;
                             this.errorMessage = '';
@@ -431,10 +444,32 @@
                     if (!v.length) return { average: 0, consensus: 0, mostVoted: '-' };
                     const nums = v.filter(n => typeof n === 'number');
                     const counts = {}; v.forEach(x => counts[x] = (counts[x] || 0) + 1);
-                    const mostVoted = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+
+                    const maxCount = Math.max(...Object.values(counts));
+                    const consensus = Math.round((maxCount / v.length) * 100);
+                    let mostVoted;
+                    
+                    if (consensus > 50) {
+                        mostVoted = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+                    } else {
+                        const avg = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+                        // const allVotes = Object.keys(counts).map(k => ({ val: k, count: counts[k], diff: Math.abs(parseFloat(k) - avg) }));
+                        // mostVoted = allVotes.sort((a, b) => a.diff - b.diff)[0].val;
+                        const deckValues = this.decks[this.currentDeck].filter(x => typeof x === 'number');
+                        mostVoted = deckValues.reduce((closest, val) => {
+                            const closestDist = Math.abs(closest - avg);
+                            const valDist = Math.abs(val - avg);
+                            // Se distanze uguali, scegli il valore più alto
+                            if (valDist < closestDist || (valDist === closestDist && val > closest)) {
+                                return val;
+                            }
+                            return closest;
+                        });
+                    }
+                    
                     return { 
                         average: nums.length ? (nums.reduce((a,b)=>a+b, 0)/nums.length).toFixed(1) : '-', 
-                        consensus: Math.round((Math.max(...Object.values(counts))/v.length)*100),
+                        consensus: consensus,
                         mostVoted: mostVoted
                     };
                 }

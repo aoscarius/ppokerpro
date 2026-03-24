@@ -41,15 +41,17 @@ io.on('connection', (socket) => {
     });
 
     socket.on('join-room', ({ roomId, user, isCreating }) => {
-        if (isCreating && rooms.has(roomId)) return socket.emit('room-error', 'exists');
-        if (!rooms.has(roomId)) rooms.set(roomId, { players: [], storyTitle: '', revealed: false });
-        
+        const isNewRoom = !rooms.has(roomId);
+        if (isCreating && !isNewRoom) return socket.emit('room-error', 'exists');
+
+        if (isNewRoom) { rooms.set(roomId, { players: [], storyTitle: '', revealed: false }); }
+
         const room = rooms.get(roomId);
         const nameExists = room.players.find(p => p.name.toLowerCase() === user.name.toLowerCase());
         if (nameExists && nameExists.id !== socket.id) return socket.emit('room-error', 'name_taken');
 
         if (!room.players.find(p => p.id === socket.id)) {
-            room.players.push({ ...user, id: socket.id, voted: false, vote: null, lastSeen: Date.now() });
+            room.players.push({ ...user, id: socket.id, voted: false, vote: null, lastSeen: Date.now(), isCreator: isNewRoom || isCreating });
         }
         socket.join(roomId);
         io.to(roomId).emit('update-state', room);
@@ -108,7 +110,19 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         rooms.forEach((room, roomId) => {
             const idx = room.players.findIndex(p => p.id === socket.id);
-            if (idx !== -1) { room.players.splice(idx, 1); io.to(roomId).emit('update-state', room); }
+            if (idx !== -1) { 
+                const wasCreator = room.players[idx].isCreator;
+                room.players.splice(idx, 1); 
+                // If creator disconnected promote the next one
+                if (wasCreator && room.players.length > 0) { 
+                    room.players[0].isCreator = true; 
+                    room.creatorMessage = `${room.players[0].name} is now the creator`;
+                }
+                io.to(roomId).emit('update-state', room);
+                delete room.creatorMessage;
+                // If no player reset the room
+                if (room.players.length === 0) { rooms.delete(roomId); }
+            }
         });
     });
 });
@@ -118,7 +132,7 @@ setInterval(() => {
     rooms.forEach((room, roomId) => {
         const now = Date.now();
         const initialLen = room.players.length;
-        room.players = room.players.filter(p => now - p.lastSeen < 15000); 
+        room.players = room.players.filter(p => now - p.lastSeen < 15000);
         if (room.players.length !== initialLen) io.to(roomId).emit('update-state', room);
     });
 }, 5000);
