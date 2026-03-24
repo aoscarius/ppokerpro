@@ -3,6 +3,26 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 
+const nodeVersion = process.version.replace('v', '').split('.');
+const majorVersion = parseInt(nodeVersion[0]);
+
+if (majorVersion < 12) {
+    console.warn(`[Compatibility Warning] Node.js ${process.version} detected. Applying Object.fromEntries polyfill...`);
+    
+    if (!Object.fromEntries) {
+        Object.fromEntries = function (entries) {
+            if (!entries || !entries[Symbol.iterator]) { 
+                throw new TypeError('Object.fromEntries require an iterable object'); 
+            }
+            let obj = {};
+            for (let [key, value] of entries) {
+                obj[key] = value;
+            }
+            return obj;
+        };
+    }
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
