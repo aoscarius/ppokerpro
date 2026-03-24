@@ -44,7 +44,7 @@ io.on('connection', (socket) => {
         const isNewRoom = !rooms.has(roomId);
         if (isCreating && !isNewRoom) return socket.emit('room-error', 'exists');
 
-        if (isNewRoom) { rooms.set(roomId, { players: [], storyTitle: '', revealed: false }); }
+        if (isNewRoom) { rooms.set(roomId, { players: [], storyTitle: '', revealed: false, currentDeck: 'Fibonacci', customDeck: null, }); }
 
         const room = rooms.get(roomId);
         const nameExists = room.players.find(p => p.name.toLowerCase() === user.name.toLowerCase());
@@ -63,6 +63,14 @@ io.on('connection', (socket) => {
             const p = room.players.find(p => p.id === socket.id);
             if (p) { p.avatar = user.avatar; io.to(roomId).emit('update-state', room); }
         }
+    });
+
+    socket.on('update-deck', ({ roomId, deckName, deckValues }) => {
+        const room = rooms.get(roomId);
+        if (!room) return;
+        room.currentDeck = deckName;
+        room.deckValues = deckValues;
+        io.to(roomId).emit('update-state', room);
     });
 
     socket.on('cast-vote', ({ roomId, vote }) => {

@@ -93,13 +93,26 @@
                             <input type="text" x-model="storyTitle" @input="broadcastTitle()" placeholder="Enter User Story..." class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-2 text-center font-bold text-indigo-300 outline-none focus:border-indigo-500 transition-colors">
                             <div class="flex justify-center gap-2">
                                 <template x-for="d in Object.keys(decks)" :key="d">
-                                    <button @click="currentDeck = d" x-text="d" 
+                                    <button @click="selectDeck(d)" x-text="d" 
                                             :class="currentDeck === d ? 'text-indigo-400 bg-indigo-500/10 border-indigo-500/50' : 'text-slate-500 bg-slate-800 border-slate-700'"
                                             class="text-[9px] font-black px-2 py-0.5 rounded border uppercase tracking-tighter transition-all"></button>
                                 </template>
+                                <button @click="showCustomDeckModal = true" class="text-[9px] font-black px-2 py-0.5 rounded border border-dashed text-slate-300 hover:border-indigo-300 hover:text-indigo-300">+</button>
                             </div>
                         </div>
                     </template>
+
+                    <div x-show="showCustomDeckModal" class="top-[8rem] fixed inset-0 z-[999] bg-black bg-opacity-60 flex items-center justify-center px-4">
+                        <div class="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl p-5 shadow-2xl">
+                            <h3 class="text-sm font-black uppercase mb-3">Custom Deck</h3>
+                            <input x-model="customDeckInput" placeholder="1,2,3,5,8,13" class="w-full mb-4 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm"/>
+                            <div class="flex gap-2">
+                            <button @click="saveCustomDeck()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-lg py-2 text-xs font-black">Save</button>
+                            <button @click="showCustomDeckModal=false" class="flex-1 bg-slate-700 hover:bg-slate-600 rounded-lg py-2 text-xs font-black">Exit</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <template x-if="!isCreator">
                         <div class="py-2 px-4 bg-slate-800/30 rounded-xl font-bold text-indigo-200 truncate" x-text="storyTitle || 'Waiting for User Story...'"></div>
                     </template>
@@ -256,14 +269,14 @@
                 showOverlay: true, isCreator: false, roomId: '', socketId: '',
                 userName: localStorage.getItem('p_name') || '',
                 avatarSeed: localStorage.getItem('p_avatar') || Math.random().toString(36).substring(7),
-                creatorMessage: '', storyTitle: '', myVote: null, revealed: false, players: [], currentDeck: 'Fibonacci', 
+                creatorMessage: '', creatorMessageTimer: null, storyTitle: '', myVote: null, revealed: false, players: [], 
+                currentDeck: 'Fibonacci', customDeckInput:'1,2,3,5,8,13', showCustomDeckModal: false,
                 activeEmotes: [], thrownEmotes: [], lastSelectedEmote: '🚀', errorMessage: '', linkCopied: false,
                 decks: { 
                     'Fibonacci': [1,2,3,5,8,13,21,34,'?'],
-                    'Standard': [1,2,3,4,5,10,20,50,100],
-                    'T-Shirt': ['XS','S','M','L','XL','XXL','?'],
-                    'Animals': ['🐭','🐹','🐰','🦊','🐻','🐯','🦁','🐘'],
-                    'Weather': ['☀️','🌤️','☁️','🌧️','⛈️','❄️','🌪️','🔥']
+                    'Progressive': [1,2,3,4,5,6,7,8,9,10,'?'],
+                    'Standard': [1,2,3,4,5,10,20,50,100,'?'],
+                    'T-Shirt': ['XS','S','M','L','XL','XXL','?']
                 },
                 autoReveal: false, countdown: 0, timerId: null,
 
@@ -281,14 +294,15 @@
                     socket.on('update-state', (s) => {
                         this.players = s.players || [];
                         this.revealed = s.revealed;
+
                         // check if is a promotion
                         const me = s.players.find(p => p.id === this.socketId);
                         if (me) this.isCreator = me.isCreator;
+                        if (s.creatorMessage) { this.showCreatorMessage(s.creatorMessage);}
 
-                        if (s.creatorMessage) {
-                            this.creatorMessage = s.creatorMessage;
-                            setTimeout(() => this.creatorMessage = '', 3000);
-                        }
+                        // Check for deck updates
+                        if (s.currentDeck) this.currentDeck = s.currentDeck;
+                        if (s.deckValues) this.decks[s.currentDeck] = s.deckValues;
 
                         if (this.players.some(p => p.id === this.socketId)) {
                             this.showOverlay = false;
@@ -329,7 +343,14 @@
 
                     setInterval(() => { if(!this.showOverlay) socket.emit('heartbeat', this.roomId); }, 5000);
                 },
-
+                showCreatorMessage(msg) {
+                    this.creatorMessage = msg;
+                    if (this.creatorMessageTimer) clearTimeout(this.creatorMessageTimer);
+                    this.creatorMessageTimer = setTimeout(() => {
+                        this.creatorMessage = '';
+                        this.creatorMessageTimer = null;
+                    }, 3000);
+                },
                 triggerThrow(targetId, icon) {
                     if (targetId === this.socketId) return;
                     const side = Math.random() > 0.5;
@@ -343,7 +364,6 @@
                     this.thrownEmotes.push(data);
                     socket.emit('throw-emote', { roomId: this.roomId, ...data });
                 },
-
                 animateThrow(t) {
                     const el = document.getElementById('throw-' + t.id);
                     const targetEl = document.getElementById('avatar-' + t.targetId);
@@ -370,7 +390,6 @@
                         }, 400);
                     }, 800);
                 },
-
                 sendEmote(icon) { 
                     this.lastSelectedEmote = icon;
                     const id = Date.now() + Math.random().toString(36).substring(2,7);
@@ -379,7 +398,6 @@
                     socket.emit('send-emote', { roomId: this.roomId, ...emoteData });
                     setTimeout(() => this.activeEmotes = this.activeEmotes.filter(e => e.id !== id), 2000);
                 },
-
                 startAutoReveal() {
                     if (this.timerId) return;
                     this.countdown = 3;
@@ -393,14 +411,12 @@
                         }
                     }, 1000);
                 },
-
                 cancelAutoReveal() {
                     clearInterval(this.timerId);
                     this.timerId = null;
                     this.countdown = 0;
                     if (this.isCreator) socket.emit('broadcast-countdown', { roomId: this.roomId, val: 0 });
                 },
-
                 logout() { 
                     localStorage.removeItem('p_name'); 
                     localStorage.removeItem('p_avatar');
@@ -410,6 +426,30 @@
                     this.avatarSeed = Math.random().toString(36).substring(7); 
                     localStorage.setItem('p_avatar', this.avatarSeed);
                     if (!this.showOverlay) socket.emit('update-user', { roomId: this.roomId, user: { avatar: this.avatarSeed } });
+                },
+                selectDeck(deck) {
+                    this.currentDeck = deck;
+                    socket.emit('update-deck', { roomId: this.roomId, deckName: deck, deckValues: this.decks[deck] });
+                },
+                setCustomDeck() {
+                    const raw = this.customDeckInput.split(',').map(x => x.trim()).filter(x => x);
+                    if (!raw.length) return;
+                    const parsed = raw.map(v => {if (/^-?\d+$/.test(v)) return Number(v); return v;});
+                    //
+                    const unique = parsed.filter((v, i, arr) => arr.findIndex(x => x === v) === i);
+                    if (unique.length < 2) {
+                        this.showCreatorMessage('Add almost two unique values');
+                        return;
+                    }
+
+                    this.decks.Custom = unique;
+                    this.currentDeck = 'Custom';
+                    this.showCustomDeckModal = false;
+                    socket.emit('update-deck', { roomId: this.roomId, deckName: 'Custom', deckValues: unique });
+                },
+                saveCustomDeck() {
+                    this.setCustomDeck();
+                    this.showCustomDeckModal = false;
                 },
                 confirmJoin() {
                     if(!this.userName) return;
