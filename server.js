@@ -73,11 +73,12 @@ io.on('connection', (socket) => {
 
     socket.on('send-emote', (data) => {
         const { roomId, id, icon, x } = data;
-        socket.to(roomId).emit('receive-emote', { id: id, icon: icon, x: x });
+        socket.broadcast.to(roomId).emit('receive-emote', { id: id, icon: icon, x: x });
     });
 
     socket.on('throw-emote', (data) => {
-        socket.to(data.roomId).emit('receive-throw', data);
+        const { roomId, id, targetId, icon, startX, startY } = data;
+        socket.broadcast.to(data.roomId).emit('receive-throw', { id: id, targetId: targetId, icon: icon, startX: startX, startY: startY });
     });
 
     socket.on('update-title', ({ roomId, title }) => {
@@ -86,7 +87,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('broadcast-countdown', ({ roomId, val }) => {
-        socket.to(roomId).emit('auto-reveal-tick', val);
+        socket.broadcast.to(roomId).emit('auto-reveal-tick', val);
     });
 
     socket.on('reveal-votes', (roomId) => {
@@ -122,4 +123,4 @@ setInterval(() => {
     });
 }, 5000);
 
-server.listen(3000, () => console.log('PokerPlan Pro Server Running'));
+server.listen(3000, () => console.log('PlanninPoker Pro Server Running'));

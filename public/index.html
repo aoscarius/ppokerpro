@@ -248,6 +248,7 @@
         function pokerApp() {
             const socket = io();
             return {
+                __initDone: false,
                 showOverlay: true, isCreator: false, roomId: '', socketId: '',
                 userName: localStorage.getItem('p_name') || '',
                 avatarSeed: localStorage.getItem('p_avatar') || Math.random().toString(36).substring(7),
@@ -263,6 +264,10 @@
                 autoReveal: false, countdown: 0, timerId: null,
 
                 init() {
+                    // Guard to prevent duplication
+                    if (this.__initDone) return;
+                    this.__initDone = true;
+
                     const r = new URLSearchParams(window.location.search).get('room');
                     this.isCreator = !r;
                     this.roomId = r || 'ROOM-' + Math.random().toString(36).substring(2,7).toUpperCase();
@@ -297,12 +302,16 @@
                     socket.on('auto-reveal-tick', (val) => { this.countdown = val; });
                     
                     socket.on('receive-emote', (data) => {
-                        this.activeEmotes.push(data);
-                        setTimeout(() => this.activeEmotes = this.activeEmotes.filter(e => e.id !== data.id), 2500);
+                        if (!this.activeEmotes.some(e => e.id === data.id)) {
+                            this.activeEmotes.push(data);
+                            setTimeout(() => this.activeEmotes = this.activeEmotes.filter(e => e.id !== data.id), 2500);
+                        }
                     });
 
                     socket.on('receive-throw', (data) => {
-                        this.thrownEmotes.push(data);
+                        if (!this.thrownEmotes.find(t => t.id === data.id)) {
+                            this.thrownEmotes.push(data);
+                        }
                     });
 
                     setInterval(() => { if(!this.showOverlay) socket.emit('heartbeat', this.roomId); }, 5000);
@@ -312,7 +321,7 @@
                     if (targetId === this.socketId) return;
                     const side = Math.random() > 0.5;
                     const data = {
-                        id: Date.now() + Math.random(),
+                        id: Date.now() + Math.random().toString(36).substring(2,7),
                         targetId: targetId,
                         icon: icon,
                         startX: side ? -80 : window.innerWidth + 80,
@@ -342,14 +351,16 @@
                         el.style.opacity = '0';
                         el.style.transform = 'scale(1.5) rotate(720deg)';
                         setTimeout(() => {
-                            this.thrownEmotes = this.thrownEmotes.filter(x => x.id !== t.id);
+                            if (this.thrownEmotes) {
+                                this.thrownEmotes = this.thrownEmotes.filter(x => x.id !== t.id);
+                            }
                         }, 400);
                     }, 800);
                 },
 
                 sendEmote(icon) { 
                     this.lastSelectedEmote = icon;
-                    const id = Date.now(); 
+                    const id = Date.now() + Math.random().toString(36).substring(2,7);
                     const emoteData = { id, icon, x: 10 + Math.random() * 80 };
                     this.activeEmotes.push(emoteData);
                     socket.emit('send-emote', { roomId: this.roomId, ...emoteData });
