@@ -1,6 +1,6 @@
 # PlanningPoker Pro
 
-A real-time, distributed Agile Planning Poker application designed for remote teams. Built with **Node.js**, **Socket.io**, and **Alpine.js**.
+A real-time, P2P (WebRTC) Agile Planning Poker application designed for remote teams. Built with **peer.js**, and **Alpine.js**.
 
 ## Features
 - **Real-time Sessions**: Synchronized voting board for distributed teams.
@@ -12,17 +12,13 @@ A real-time, distributed Agile Planning Poker application designed for remote te
 - **Auto-Cleanup**: Heartbeat system removes inactive/disconnected players automatically.
 
 ## Quick Start
-1. **Install dependencies**:
+1. **Run the server**:
    ```bash
-   make install
-   ```
-2. **Run the server**:
-   ```bash
-   make run
+   python -m http.server 3000
    ```
 3. Open `http://localhost:3000` in your browser.
 
 ## Tech Stack
-- **Server**: Node.js, Express, Socket.io
+- **Server**: P2P with 1:1 peerjs (WebRTC based) socket.io alternative
 - **Frontend**: Tailwind CSS, Alpine.js
 - **Animations**: Canvas-Confetti, CSS Keyframes
