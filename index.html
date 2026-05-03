@@ -33,6 +33,90 @@
             font-size: 1.6rem;
             transition: all 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
+
+        @media (max-width: 800px) {
+            footer.fixed {
+                max-width: 92vw; /* Slightly narrower to show it's a floating bar */
+                overflow-x: auto;
+                justify-content: flex-start; /* Align emotes to start for better swiping */
+                padding-left: 1.5rem;
+                padding-right: 1.5rem;
+                font-size: 1.0rem;
+                line-height: 1.0rem;
+
+                /* Stealth Scrollbar logic */
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
+
+            footer.fixed::-webkit-scrollbar {
+                display: none;
+            }
+
+            /* Prevent buttons from squishing when scrolling */
+            footer.fixed button {
+                flex-shrink: 0;
+                padding: 0.25rem; /* Better tap target */
+            }
+        }
+
+        /* Compact Mode for Ultra-Small Devices (300px - 400px) */
+        @media (max-width: 400px) {
+            /* Reduce Header Padding */
+            header {
+                padding: 0.75rem 0.5rem !important;
+                gap: 0.5rem !important;
+            }
+
+            /* Shrink Logo and Title */
+            header .bg-indigo-600 {
+                padding: 0.35rem !important;
+                font-size: 1rem !important; /* Smaller icon */
+            }
+            header h1 {
+                font-size: 0.8rem !important;
+                letter-spacing: -0.02em !important;
+            }
+            header span.text-mono {
+                font-size: 8px !important;
+            }
+
+            /* Shrink Avatar and Action Buttons */
+            header .w-9.h-9 {
+                width: 1.75rem !important; /* ~28px */
+                height: 1.75rem !important;
+            }
+            header button.p-2 {
+                padding: 0.35rem !important;
+            }
+
+            /* Compact Story Input & Deck Buttons */
+            header input[type="text"] {
+                padding: 0.4rem 0.5rem !important;
+                font-size: 0.75rem !important;
+                border-radius: 0.5rem !important;
+            }
+            
+            /* Adjust Deck Buttons to be even smaller */
+            header .text-\[9px\] {
+                font-size: 8px !important;
+                padding: 2px 4px !important;
+            }
+
+            /* Global Padding Adjustment */
+            main {
+                padding: 0.5rem !important;
+            }
+
+            /* Voting Cards Grid */
+            .grid-cols-4 {
+                grid-template-columns: repeat(3, 1fr) !important;
+                gap: 0.4rem !important;
+            }
+            .h-20 {
+                height: 3.5rem !important;
+            }
+        }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen" x-data="pokerApp()" x-init="init()">
@@ -79,26 +163,51 @@
         </div>
 
         <div x-show="!showOverlay" class="flex flex-col min-h-screen">
-            <header class="p-4 border-b border-slate-800 glass sticky top-0 z-50 flex items-center justify-between">
-                <div class="flex items-center gap-3">
+            <header class="p-4 border-b border-slate-800 glass sticky top-0 z-50 flex flex-wrap items-center justify-between gap-y-4">
+                <div class="flex items-center gap-3 order-1">
                     <div class="bg-indigo-600 p-2 rounded-lg font-black text-xl shadow-lg">🃏</div>
                     <div>
                         <h1 class="text-lg font-black leading-none uppercase tracking-tighter text-white">PlanningPoker Pro</h1>
                         <span class="text-[10px] text-slate-500 font-mono font-bold tracking-widest uppercase" x-text="roomId"></span>
                     </div>
                 </div>
-                
-                <div class="flex-1 max-w-md px-4 text-center">
+
+                <div class="flex items-center gap-2 md:gap-4 relative order-2 md:order-3" x-data="{ open: false }">
+                    <div class="text-right hidden md:block">
+                        <p class="text-xs font-black text-white leading-none" x-text="userName"></p>
+                        <p class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1" x-text="isCreator ? 'Session Creator' : 'Member'"></p>
+                    </div>
+                    
+                    <img @click="open = !open" :src="`https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}`" class="w-9 h-9 md:w-10 md:h-10 rounded-full border border-slate-700 hover:border-indigo-500 transition-all shadow-lg cursor-pointer bg-slate-800">
+                    
+                    <div x-show="open" @click.away="open = false" x-cloak class="absolute right-0 top-12 w-48 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-2 z-[60]">
+                        <button @click="changeAvatar(); open = false" class="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-800 transition-colors flex items-center gap-2 text-slate-300">
+                            <span>🔄</span> Change Avatar
+                        </button>
+                        <button @click="logout()" class="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-800 transition-colors flex items-center gap-2 text-red-400 border-t border-slate-800 mt-1">
+                            <span>🚪</span> Exit Session
+                        </button>
+                    </div>
+
+                    <button @click="copyLink()" 
+                            :class="linkCopied ? 'bg-emerald-600 border-emerald-400' : 'bg-slate-800 border-slate-700 hover:bg-slate-700'" 
+                            class="p-2 rounded-lg border transition-all duration-300" title="Copy Room Link">
+                        <span x-text="linkCopied ? '✅' : '🔗'"></span>
+                    </button>
+                </div>
+
+                <div class="w-full md:w-auto md:flex-1 md:max-w-md md:px-4 text-center order-3 md:order-2">
                     <template x-if="isCreator">
                         <div class="flex flex-col gap-2">
-                            <input type="text" x-model="storyTitle" @input="broadcastTitle()" placeholder="Enter User Story..." class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-2 text-center font-bold text-indigo-300 outline-none focus:border-indigo-500 transition-colors">
-                            <div class="flex justify-center gap-2">
+                            <input type="text" x-model="storyTitle" @input="broadcastTitle()" placeholder="Enter User Story..." class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-2 text-center font-bold text-indigo-300 outline-none focus:border-indigo-500 transition-colors text-sm">
+                            <div class="flex justify-center gap-1.5 flex-wrap">
                                 <template x-for="d in Object.keys(decks)" :key="d">
                                     <button @click="selectDeck(d)" x-text="d" 
-                                            :class="currentDeck === d ? 'text-indigo-400 bg-indigo-500/10 border-indigo-500/50' : 'text-slate-500 bg-slate-800 border-slate-700'"
-                                            class="text-[9px] font-black px-2 py-0.5 rounded border uppercase tracking-tighter transition-all"></button>
+                                            :class="currentDeck === d ? 'text-indigo-400 bg-indigo-500/10 border-indigo-500/50' : 'text-slate-500 bg-slate-800 border-slate-700'" 
+                                            class="text-[9px] font-black px-2 py-1 rounded border uppercase tracking-tighter transition-all">
+                                    </button>
                                 </template>
-                                <button @click="showCustomDeckModal = true" class="text-[9px] font-black px-2 py-0.5 rounded border border-dashed text-slate-300 hover:border-indigo-300 hover:text-indigo-300">+</button>
+                                <button @click="showCustomDeckModal = true" class="text-[9px] font-black px-2 py-1 rounded border border-dashed text-slate-300 hover:border-indigo-300 hover:text-indigo-300">+</button>
                             </div>
                         </div>
                     </template>
@@ -113,33 +222,11 @@
                             </div>
                         </div>
                     </div>
-
-                    <template x-if="!isCreator">
-                        <div class="py-2 px-4 bg-slate-800/30 rounded-xl font-bold text-indigo-200 truncate" x-text="storyTitle || 'Waiting for User Story...'"></div>
-                    </template>
-                </div>
-
-                <div class="flex items-center gap-4 relative" x-data="{ open: false }">
-                    <div class="text-right hidden md:block">
-                        <p class="text-xs font-black text-white leading-none" x-text="userName"></p>
-                        <p class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1" x-text="isCreator ? 'Session Creator' : 'Member'"></p>
-                    </div>
-                    <img @click="open = !open" :src="`https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}`" class="w-10 h-10 rounded-full border border-slate-700 hover:border-indigo-500 transition-all shadow-lg cursor-pointer bg-slate-800">
                     
-                    <div x-show="open" @click.away="open = false" class="absolute right-0 top-12 w-48 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-2 z-[60]">
-                        <button @click="changeAvatar(); open = false" class="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-800 transition-colors flex items-center gap-2 text-slate-300">
-                            <span>🔄</span> Change Avatar
-                        </button>
-                        <button @click="logout()" class="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-800 transition-colors flex items-center gap-2 text-red-400 border-t border-slate-800 mt-1">
-                            <span>🚪</span> Exit Session
-                        </button>
-                    </div>
-
-                    <button @click="copyLink()" 
-                            :class="linkCopied ? 'bg-emerald-600 border-emerald-400' : 'bg-slate-800 border-slate-700 hover:bg-slate-700'"
-                            class="p-2 rounded-lg border transition-all duration-300" title="Copy Room Link">
-                        <span x-text="linkCopied ? '✅' : '🔗'"></span>
-                    </button>
+                    <template x-if="!isCreator">
+                        <div class="py-2 px-4 bg-slate-800/30 rounded-xl font-bold text-indigo-200 truncate text-sm border border-slate-800/50" 
+                            x-text="storyTitle || 'Waiting for User Story...'"></div>
+                    </template>
                 </div>
             </header>
 
