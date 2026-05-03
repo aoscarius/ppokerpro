@@ -40,6 +40,7 @@ def handle_join(data):
         rooms[room_id] = {
             'players': [],
             'storyTitle': '',
+            'newsession': False,
             'revealed': False,
             'currentDeck': 'Fibonacci',
             'customDeck': None
@@ -107,6 +108,7 @@ def handle_reveal(room_id):
 def handle_reset(room_id):
     room = rooms.get(room_id)
     if room:
+        room['newsession'] = True
         room['revealed'] = False
         room['storyTitle'] = ''
         for p in room['players']:
@@ -114,6 +116,7 @@ def handle_reset(room_id):
             p['vote'] = None
         emit('update-state', room, to=room_id)
         emit('auto-reveal-tick', 0, to=room_id)
+        room['newsession'] = False
 
 @socketio.on('disconnect')
 def handle_disconnect():
