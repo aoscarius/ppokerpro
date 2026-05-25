@@ -436,7 +436,7 @@
                         }
                     });
 
-                    setInterval(() => { if(!this.showOverlay) socket.emit('heartbeat', this.roomId); }, 5000);
+                    setInterval(() => { if(!this.showOverlay) socket.emit('heartbeat', this.roomId); }, 15000);
                 },
                 showCreatorMessage(msg) {
                     this.creatorMessage = msg;

@@ -27,6 +27,10 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Heartbeat parameters
+const maxHeartbeat = 45000;
+const heartbeatCheckInterval = 10000;
+
 app.use(express.static(path.join(__dirname, 'public')));
 const rooms = new Map();
 
@@ -128,9 +132,11 @@ io.on('connection', (socket) => {
                 if (wasCreator && room.players.length > 0) { 
                     room.players[0].isCreator = true; 
                     room.creatorMessage = `${room.players[0].name} is now the creator`;
+                    io.to(roomId).emit('update-state', room);
+                    delete room.creatorMessage;
+                } else {
+                    io.to(roomId).emit('update-state', room);
                 }
-                io.to(roomId).emit('update-state', room);
-                delete room.creatorMessage;
                 // If no player reset the room
                 if (room.players.length === 0) { rooms.delete(roomId); }
             }
@@ -143,9 +149,28 @@ setInterval(() => {
     rooms.forEach((room, roomId) => {
         const now = Date.now();
         const initialLen = room.players.length;
-        room.players = room.players.filter(p => now - p.lastSeen < 15000);
-        if (room.players.length !== initialLen) io.to(roomId).emit('update-state', room);
+        const playersToRemove = room.players.filter(p => now - p.lastSeen >= maxHeartbeat);
+        
+        playersToRemove.forEach(playerToRemove => {
+            const wasCreator = playerToRemove.isCreator;
+            const idx = room.players.findIndex(p => p.id === playerToRemove.id);
+            if (idx !== -1) {
+                room.players.splice(idx, 1);
+                // If is creator promove to next one
+                if (wasCreator && room.players.length > 0) {
+                    room.players[0].isCreator = true;
+                    room.creatorMessage = `${room.players[0].name} is now the creator`;
+                }
+            }
+        });
+        
+        if (room.players.length !== initialLen) {
+            io.to(roomId).emit('update-state', room);
+            delete room.creatorMessage;
+        }
+        // If no player reset the room
+        if (room.players.length === 0) { rooms.delete(roomId); }
     });
-}, 5000);
+}, heartbeatCheckInterval);
 
 server.listen(3000, () => console.log('PlanninPoker Pro Server Running'));
