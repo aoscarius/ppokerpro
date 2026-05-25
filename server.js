@@ -27,22 +27,18 @@ const app = express();
 const server = http.createServer(app);
 
 // Socket.IO configuration with native ping/pong heartbeat
+// These settings detect actual connection loss, not browser inactivity
 const io = new Server(server, {
-    pingInterval: 25000,  // Server sends ping every 25 seconds
-    pingTimeout: 60000,   // Client has 60 seconds to respond before auto-disconnect
+    pingInterval: 30000,  // Server sends ping every 30 seconds
+    pingTimeout: 120000,  // Client has 120 seconds to respond (allows background/sleep)
     transports: ['websocket', 'polling']
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
 const rooms = new Map();
 
-// Track player activity for inactivity-based disconnection
-const inactivityTimeout = 5 * 60 * 1000; // 5 minutes of inactivity
-const playerActivity = new Map();
-
 io.on('connection', (socket) => {
-    // Initialize activity tracking for new player
-    playerActivity.set(socket.id, Date.now());
+    console.log(`Client ${socket.id} connected`);
 
     socket.on('join-room', ({ roomId, user, isCreating }) => {
         const isNewRoom = !rooms.has(roomId);
@@ -82,7 +78,6 @@ io.on('connection', (socket) => {
             const p = room.players.find(p => p.id === socket.id);
             if (p) { 
                 p.avatar = user.avatar; 
-                playerActivity.set(socket.id, Date.now()); // Track activity
                 io.to(roomId).emit('update-state', room); 
             }
         }
@@ -93,7 +88,6 @@ io.on('connection', (socket) => {
         if (!room) return;
         room.currentDeck = deckName;
         room.deckValues = deckValues;
-        playerActivity.set(socket.id, Date.now()); // Track activity
         io.to(roomId).emit('update-state', room);
     });
 
@@ -104,7 +98,6 @@ io.on('connection', (socket) => {
             if (p) { 
                 p.vote = vote; 
                 p.voted = true; 
-                playerActivity.set(socket.id, Date.now()); // Track activity
                 io.to(roomId).emit('update-state', room); 
             }
         }
@@ -112,14 +105,12 @@ io.on('connection', (socket) => {
 
     socket.on('send-emote', (data) => {
         const { roomId, id, icon, x } = data;
-        playerActivity.set(socket.id, Date.now()); // Track activity
         socket.broadcast.to(roomId).emit('receive-emote', { id: id, icon: icon, x: x });
     });
 
     socket.on('throw-emote', (data) => {
         const { roomId, id, targetId, icon, startX, startY } = data;
-        playerActivity.set(socket.id, Date.now()); // Track activity
-        socket.broadcast.to(roomId).emit('receive-throw', { 
+        socket.broadcast.to(data.roomId).emit('receive-throw', { 
             id: id, 
             targetId: targetId, 
             icon: icon, 
@@ -132,13 +123,11 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomId);
         if (room) { 
             room.storyTitle = title; 
-            playerActivity.set(socket.id, Date.now()); // Track activity
             io.to(roomId).emit('update-state', room); 
         }
     });
 
     socket.on('broadcast-countdown', ({ roomId, val }) => {
-        playerActivity.set(socket.id, Date.now()); // Track activity
         socket.broadcast.to(roomId).emit('auto-reveal-tick', val);
     });
 
@@ -146,7 +135,6 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomId);
         if (room) { 
             room.revealed = true; 
-            playerActivity.set(socket.id, Date.now()); // Track activity
             io.to(roomId).emit('update-state', room); 
         }
     });
@@ -158,17 +146,15 @@ io.on('connection', (socket) => {
             room.revealed = false; 
             room.storyTitle = '';
             room.players.forEach(p => { p.voted = false; p.vote = null; });
-            playerActivity.set(socket.id, Date.now()); // Track activity
             io.to(roomId).emit('update-state', room);
             io.to(roomId).emit('auto-reveal-tick', 0);
             room.newsession = false;
         }
     });
 
-    // Native Socket.IO disconnect event (triggered by ping/pong timeout or explicit disconnect)
+    // Only disconnect on actual connection loss or explicit disconnect
     socket.on('disconnect', (reason) => {
         console.log(`Client ${socket.id} disconnected: ${reason}`);
-        playerActivity.delete(socket.id);
         
         rooms.forEach((room, roomId) => {
             const idx = room.players.findIndex(p => p.id === socket.id);
@@ -180,56 +166,17 @@ io.on('connection', (socket) => {
                 if (wasCreator && room.players.length > 0) { 
                     room.players[0].isCreator = true; 
                     room.creatorMessage = `${room.players[0].name} is now the creator`;
-                    
                     io.to(roomId).emit('update-state', room);
                     delete room.creatorMessage;
                 } else {
                     io.to(roomId).emit('update-state', room);
-                }                
-                // If no player reset the room
+                }
+                
+                // If no players left, delete the room
                 if (room.players.length === 0) { rooms.delete(roomId); }
             }
         });
     });
 });
-
-// Inactivity-based player cleanup (runs every 2 minutes)
-setInterval(() => {
-    const now = Date.now();
-    rooms.forEach((room, roomId) => {
-        let creatorChanged = false;
-        
-        for (let idx = room.players.length - 1; idx >= 0; idx--) {
-            const player = room.players[idx];
-            const lastActivity = playerActivity.get(player.id);
-            
-            // Remove player if inactive for longer than threshold
-            if (lastActivity && now - lastActivity > inactivityTimeout) {
-                console.log(`Player ${player.name} (${player.id}) removed due to inactivity`);
-                const wasCreator = player.isCreator;
-                room.players.splice(idx, 1);
-                playerActivity.delete(player.id);
-                
-                // Notify disconnected player
-                io.to(player.id).emit('room-error', 'inactivity');
-                
-                // If creator was inactive, promote next player
-                if (wasCreator && room.players.length > 0) {
-                    room.players[0].isCreator = true;
-                    room.creatorMessage = `${room.players[0].name} is now the creator`;
-                    creatorChanged = true;
-                }
-            }
-        }
-        
-        // Emit updated state if players were removed
-        if (room.players.length === 0) {
-            rooms.delete(roomId);
-        } else if (creatorChanged) {
-            io.to(roomId).emit('update-state', room);
-            delete room.creatorMessage;
-        }
-    });
-}, 120000); // Check every 2 minutes
 
 server.listen(3000, () => console.log('PlanningPoker Pro Server Running'));
