@@ -179,4 +179,17 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(3000, () => console.log('PlanningPoker Pro Server Running'));
+const PORT = process.env.PORT || 3000;
+
+// handle listen errors (EADDRINUSE etc.)
+server.on('error', (err) => {
+    // English comments preserved
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Choose another PORT or stop the process using it.`);
+        process.exit(1);
+    } else {
+        throw err;
+    }
+});
+
+server.listen(PORT, () => console.log(`PlanningPoker Pro Server Running on ${PORT}`));
